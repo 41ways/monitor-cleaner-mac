@@ -12,5 +12,6 @@ lipo -create build/mc-arm64 build/mc-x86_64 -output "$APP/Contents/MacOS/Monitor
 rm build/mc-arm64 build/mc-x86_64
 cp Info.plist "$APP/Contents/"
 [ -f icon/AppIcon.icns ] && cp icon/AppIcon.icns "$APP/Contents/Resources/"
+cp Resources/* "$APP/Contents/Resources/"
 codesign --force --deep -s - "$APP"
 echo "$APP"

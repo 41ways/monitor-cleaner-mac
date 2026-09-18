@@ -77,9 +77,13 @@ struct Breed {
     var lightMuzzle = true
     var blaze = false, chest = true, cheeks = false, mask = false, saddle = false
     var paws = true, ruff = false, tailTip = false
+    var model: String? = nil          // 받아 온 모델(Resources/<이름>.json)을 잘라 쓴다
 }
 
 let BREEDS: [Breed] = [
+    Breed(id: "corgi3d", name: "웰시코기 (받은 모델)", base: hex(0xe0883a), light: hex(0xfff5ea),
+          bodyLen: 1.3, bodyW: 0.3, bodyH: 0.3, legLen: 0.12, head: 0.3, muzzle: 0.2,
+          ear: .pointy(0.3), tail: .nub, scale: 0.85, model: "corgi"),
     Breed(id: "corgi", name: "웰시코기", base: hex(0xe0883a), light: hex(0xfff5ea),
           bodyLen: 1.05, bodyW: 0.5, bodyH: 0.42, legLen: 0.19, legW: 0.14, head: 0.46, muzzle: 0.2,
           ear: .pointy(0.36), tail: .nub, blaze: true),
@@ -132,13 +136,19 @@ final class Dog {
     var jump: CGFloat = 0, spin: CGFloat = 0
     var licks = 0, lickT: CGFloat = 0, fogT: CGFloat = 0, printed = false
     var wantLick = false
-    let hipZ: CGFloat
+    var hipY: CGFloat = 0
+    var height: CGFloat = 1
 
     init(_ b: Breed) {
         breed = b
+        if let m = b.model, let md = ModelData.load(m) {
+            buildModel(md)
+            return
+        }
         let L = b.legLen, bh = b.bodyH, bl = b.bodyLen, bw = b.bodyW, h = b.head
         let hipP = SCNVector3(0, L + bh * 0.5, -bl * 0.38)
-        hipZ = hipP.z
+        hipY = hipP.y
+        height = L + bh + h
         hip.position = hipP
         root.addChildNode(hip)
         func add(_ n: SCNNode, _ p: SCNVector3, to parent: SCNNode? = nil) {
@@ -422,7 +432,7 @@ final class Dog {
             let p = -timer / 0.7       // 0 → 1
             jump = p < 1 ? sin(p * .pi) * 0.45 : 0
             spin = p < 1 ? p * 2 * .pi : 0
-            if timer > -0.02 { st.addHeart(x, (breed.legLen + breed.bodyH + breed.head) * breed.scale * SIZE + st.floorY + 0.4, z) }
+            if timer > -0.02 { st.addHeart(x, height * breed.scale * SIZE + st.floorY + 0.4, z) }
             if p >= 1.6 { state = .idle; timer = rnd(0.8, 1.5); jump = 0; spin = 0; wag = 4 }
         }
         if state != .pet { wag = ease(wag, walking ? 7 : (state == .lick ? 12 : 4), dt * 2) }
@@ -446,7 +456,7 @@ final class Dog {
         root.eulerAngles = SCNVector3(0, yaw + spin, 0)
         let R = rear * 0.95
         hip.eulerAngles = SCNVector3(-R, 0, 0)
-        hip.position.y = breed.legLen + breed.bodyH * 0.5 + abs(cos(phase)) * min(0.04, speed * 0.02)
+        hip.position.y = hipY + abs(cos(phase)) * min(0.04, speed * 0.02)
         for (i, l) in front.enumerated() {
             l.eulerAngles = SCNVector3((i == 0 ? sw : -sw) * (1 - rear) - rear * 0.55 + sin(t * 9 + CGFloat(i)) * 0.12 * rear, 0, 0)
         }
@@ -457,5 +467,107 @@ final class Dog {
         tail.eulerAngles = SCNVector3(0, sin(t * wag) * 0.5, 0)
         tongue.scale = SCNVector3(1, 1, max(0.01, tongueOut))
         tongue.eulerAngles = SCNVector3(0.35 * tongueOut * (1 - rear), 0, 0)
+    }
+}
+
+
+// 받아 온 모델 — split.py 가 부위별로 잘라 둔 것
+struct ModelData {
+    struct Part { let pivot: SCNVector3; let geo: SCNGeometry }
+    var parts: [String: Part] = [:]
+    var nose = SCNVector3Zero
+    var size = SCNVector3Zero
+
+    static var cache: [String: ModelData] = [:]
+    static func url(_ file: String) -> URL? {
+        if let u = Bundle.main.resourceURL?.appendingPathComponent(file), FileManager.default.fileExists(atPath: u.path) { return u }
+        let exe = URL(fileURLWithPath: CommandLine.arguments[0]).absoluteURL.deletingLastPathComponent()
+        for base in [exe.appendingPathComponent("../Resources"), URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Resources")] {
+            let u = base.appendingPathComponent(file)
+            if FileManager.default.fileExists(atPath: u.path) { return u.absoluteURL.standardizedFileURL }
+        }
+        return nil
+    }
+    static func load(_ name: String) -> ModelData? {
+        if let c = cache[name] { return c }
+        let uu = url(name + ".json"); if ProcessInfo.processInfo.environment["MC_DEBUG"] != nil { print("model url", uu as Any) }
+        guard let u = uu, let d = try? Data(contentsOf: u),
+              let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let ps = j["parts"] as? [String: [String: Any]] else { return nil }
+        let tex = (j["texture"] as? String).flatMap { url($0) }.flatMap { NSImage(contentsOf: $0) }
+        let m = SCNMaterial()
+        m.diffuse.contents = tex ?? NSColor.orange
+        m.lightingModel = .lambert
+        m.isDoubleSided = true
+        var md = ModelData()
+        func v3(_ a: Any?) -> SCNVector3 {
+            let x = (a as? [Double]) ?? [0, 0, 0]
+            return SCNVector3(x[0], x[1], x[2])
+        }
+        md.nose = v3(j["nose"]); md.size = v3(j["size"])
+        for (name, p) in ps {
+            let v = (p["v"] as? [Double]) ?? [], n = (p["n"] as? [Double]) ?? [], t = (p["uv"] as? [Double]) ?? []
+            let cnt = v.count / 3
+            var vs = [SCNVector3](), ns = [SCNVector3](), ts = [CGPoint]()
+            for i in 0..<cnt {
+                vs.append(SCNVector3(v[i * 3], v[i * 3 + 1], v[i * 3 + 2]))
+                ns.append(SCNVector3(n[i * 3], n[i * 3 + 1], n[i * 3 + 2]))
+                ts.append(CGPoint(x: t[i * 2], y: t[i * 2 + 1]))
+            }
+            let el = SCNGeometryElement(indices: (0..<Int32(cnt)).map { $0 }, primitiveType: .triangles)
+            let g = SCNGeometry(sources: [SCNGeometrySource(vertices: vs), SCNGeometrySource(normals: ns),
+                                          SCNGeometrySource(textureCoordinates: ts)], elements: [el])
+            g.materials = [m]
+            md.parts[name] = Part(pivot: v3(p["pivot"]), geo: g)
+        }
+        cache[name] = md
+        return md
+    }
+}
+
+extension Dog {
+    func buildModel(_ md: ModelData) {
+        let hipP = md.parts["body"]?.pivot ?? SCNVector3(0, 0.3, -0.3)
+        hip.position = hipP
+        hipY = hipP.y
+        height = md.size.y
+        root.addChildNode(hip)
+        func rel(_ p: SCNVector3, _ to: SCNVector3) -> SCNVector3 { SCNVector3(p.x - to.x, p.y - to.y, p.z - to.z) }
+        for (name, p) in md.parts {
+            let n: SCNNode
+            switch name {
+            case "head": n = head
+            case "tail": n = tail
+            case "body": n = SCNNode()
+            default: n = SCNNode(); if name.hasPrefix("legF") { front.append(n) } else { hind.append(n) }
+            }
+            n.geometry = p.geo
+            n.position = rel(p.pivot, hipP)
+            hip.addChildNode(n)
+        }
+        // 코와 혀 — 머리 관절 기준
+        let hp = md.parts["head"]?.pivot ?? hipP
+        nose.position = rel(md.nose, hp)
+        head.addChildNode(nose)
+        tongue.position = SCNVector3(nose.position.x, nose.position.y - 0.1, nose.position.z - 0.1)
+        tongue.addChildNode(box(0.1, 0.03, 0.18, hex(0xff7b8c), ch: 0.012, at: SCNVector3(0, -0.02, 0.09)))
+        tongue.scale = SCNVector3(1, 1, 0.01)
+        head.addChildNode(tongue)
+
+        let sh = SCNPlane(width: CGFloat(md.size.x) * 2.6, height: CGFloat(md.size.z) * 1.3)
+        let sm = SCNMaterial()
+        sm.diffuse.contents = Tex.shadow
+        sm.lightingModel = .constant
+        sm.writesToDepthBuffer = false
+        sh.materials = [sm]
+        let shn = SCNNode(geometry: sh)
+        shn.eulerAngles = SCNVector3(-CGFloat.pi / 2, 0, 0)
+        shn.position = SCNVector3(0, 0.005, 0.15)
+        shn.renderingOrder = -1
+        root.addChildNode(shn)
+
+        let k = breed.scale * SIZE
+        root.scale = SCNVector3(k, k, k)
+        maxSpeed = 1.3
     }
 }

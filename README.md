@@ -14,6 +14,13 @@
 [Releases](https://github.com/41ways/monitor-cleaner-mac/releases)에서 zip 받아 풀고 응용 프로그램 폴더로.
 서명 안 된 앱이라 처음엔 우클릭 → 열기. macOS 14 이상.
 
+## 받아 온 모델
+
+통짜 모델(뼈대 없음)을 `models/split.py` 가 삼각형 위치로 몸통·머리·다리 넷·꼬리로 잘라 `Resources/<이름>.json` 으로 만든다.
+앱은 그 조각을 관절처럼 돌려서 걷고, 일어서고, 핥는다.
+
+- "Corgi" — madtrollstudio, [Poly Pizza](https://poly.pizza/m/2neHxHTY3t), CC BY
+
 ## 빌드
 
 Xcode 없이 명령행 도구만 있으면 된다.
