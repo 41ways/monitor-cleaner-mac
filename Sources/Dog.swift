@@ -81,9 +81,6 @@ struct Breed {
 }
 
 let BREEDS: [Breed] = [
-    Breed(id: "corgi3d", name: "웰시코기 (받은 모델)", base: hex(0xe0883a), light: hex(0xfff5ea),
-          bodyLen: 1.3, bodyW: 0.3, bodyH: 0.3, legLen: 0.12, head: 0.3, muzzle: 0.2,
-          ear: .pointy(0.3), tail: .nub, scale: 0.85, model: "corgi"),
     Breed(id: "corgi", name: "웰시코기", base: hex(0xe0883a), light: hex(0xfff5ea),
           bodyLen: 1.05, bodyW: 0.5, bodyH: 0.42, legLen: 0.19, legW: 0.14, head: 0.46, muzzle: 0.2,
           ear: .pointy(0.36), tail: .nub, blaze: true),
@@ -110,6 +107,9 @@ let BREEDS: [Breed] = [
           bodyLen: 0.7, bodyW: 0.46, bodyH: 0.46, legLen: 0.16, legW: 0.13, head: 0.44, muzzle: 0.12,
           ear: .fluffy(0.3), tail: .plume, scale: 0.85, round: 0.2, lightMuzzle: false, chest: false,
           paws: false, ruff: true),
+    Breed(id: "corgi3d", name: "웰시코기 모델 (미완)", base: hex(0xe0883a), light: hex(0xfff5ea),
+          bodyLen: 1.3, bodyW: 0.3, bodyH: 0.3, legLen: 0.12, head: 0.3, muzzle: 0.2,
+          ear: .pointy(0.3), tail: .nub, scale: 0.85, model: "corgi"),
 ]
 
 final class Dog {
@@ -490,8 +490,7 @@ struct ModelData {
     }
     static func load(_ name: String) -> ModelData? {
         if let c = cache[name] { return c }
-        let uu = url(name + ".json"); if ProcessInfo.processInfo.environment["MC_DEBUG"] != nil { print("model url", uu as Any) }
-        guard let u = uu, let d = try? Data(contentsOf: u),
+        guard let u = url(name + ".json"), let d = try? Data(contentsOf: u),
               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let ps = j["parts"] as? [String: [String: Any]] else { return nil }
         let tex = (j["texture"] as? String).flatMap { url($0) }.flatMap { NSImage(contentsOf: $0) }
